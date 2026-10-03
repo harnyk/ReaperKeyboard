@@ -1,4 +1,4 @@
-"""Раскладка хоткеев MIDI-редактора REAPER для работы без мыши.
+"""Раскладка хоткеев REAPER (MIDI-редактор + главное окно) для работы без мыши.
 
 Единый источник: отсюда генерируются и строки KEY для reaper-kb.ini, и шпаргалка KEYS.md.
 
@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-SECTION = 32060  # MIDI Editor
+MIDI, MAIN = 32060, 0  # секции: MIDI Editor, главное окно
 KB_INI = Path.home() / ".config/REAPER/reaper-kb.ini"
 HERE = Path(__file__).parent
 
@@ -78,13 +78,25 @@ KEYS = [
     ("m", 0, 40834, "Вид и транспорт", "предыдущий MIDI-айтем"),
 ]
 
+# главное окно: добраться до айтема и открыть его в MIDI-редакторе (Esc закрывает редактор штатно)
+KEYS_MAIN = [
+    ("j", 0, 40285, "Главное окно", "следующий трек"),
+    ("k", 0, 40286, "Главное окно", "предыдущий трек"),
+    ("h", 0, 40416, "Главное окно", "выбрать предыдущий айтем"),
+    ("l", 0, 40417, "Главное окно", "выбрать следующий айтем"),
+    ("Enter", 0, 40153, "Главное окно", "открыть айтем в MIDI-редакторе"),
+    ("i", 0, 40214, "Главное окно", "создать новый MIDI-айтем"),
+]
+
+ALL = [(MIDI, *k) for k in KEYS] + [(MAIN, *k) for k in KEYS_MAIN]
+
 
 def keycode(key):
     return SPECIAL.get(key) or ord(key.upper())
 
 
-def kb_line(key, mods, cmd):
-    return f"KEY {VK | mods} {keycode(key)} {cmd} {SECTION}"
+def kb_line(section, key, mods, cmd):
+    return f"KEY {VK | mods} {keycode(key)} {cmd} {section}"
 
 
 def label(key, mods):
@@ -95,7 +107,7 @@ def cheatsheet():
     out = ["# Хоткеи MIDI-редактора (без мыши)", "",
            "Сгенерировано из `midi_keys.py`. Без модификатора — курсоры, Ctrl — крупный шаг, Shift — двигать выделенные ноты.", ""]
     group = None
-    for key, mods, cmd, grp, desc in KEYS:
+    for _, key, mods, cmd, grp, desc in ALL:
         if grp != group:
             out += ["", f"## {grp}", "", "| Клавиша | Действие |", "|---|---|"]
             group = grp
@@ -107,16 +119,16 @@ def install():
     if subprocess.run(["pgrep", "-x", "reaper"], capture_output=True).returncode == 0:
         sys.exit("REAPER запущен: он перезапишет reaper-kb.ini при выходе. Закройте его и повторите.")
     shutil.copy(KB_INI, KB_INI.with_name("reaper-kb.ini.bak-before-keys"))
-    taken = {(VK | mods, keycode(key)) for key, mods, *_ in KEYS}
+    taken = {(sec, VK | mods, keycode(key)) for sec, key, mods, *_ in ALL}
     kept = []
     for line in KB_INI.read_text().splitlines():
         p = line.split()
-        if len(p) == 5 and p[0] == "KEY" and int(p[4]) == SECTION and (int(p[1]), int(p[2])) in taken:
+        if len(p) == 5 and p[0] == "KEY" and (int(p[4]), int(p[1]), int(p[2])) in taken:
             continue  # старая привязка той же клавиши — заменяем
         kept.append(line)
-    kept += [kb_line(key, mods, cmd) for key, mods, cmd, *_ in KEYS]
+    kept += [kb_line(sec, key, mods, cmd) for sec, key, mods, cmd, *_ in ALL]
     KB_INI.write_text("\n".join(kept) + "\n")
-    print(f"записано {len(KEYS)} привязок в {KB_INI}")
+    print(f"записано {len(ALL)} привязок в {KB_INI}")
 
 
 if __name__ == "__main__":
