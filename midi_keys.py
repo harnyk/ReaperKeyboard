@@ -123,7 +123,7 @@ def install():
     kept = []
     for line in KB_INI.read_text().splitlines():
         p = line.split()
-        if len(p) == 5 and p[0] == "KEY" and (int(p[4]), int(p[1]), int(p[2])) in taken:
+        if len(p) >= 5 and p[0] == "KEY" and (int(p[4]), int(p[1]), int(p[2])) in taken:
             continue  # старая привязка той же клавиши — заменяем
         kept.append(line)
     kept += [kb_line(sec, key, mods, cmd) for sec, key, mods, cmd, *_ in ALL]
