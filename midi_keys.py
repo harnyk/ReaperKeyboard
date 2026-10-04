@@ -20,7 +20,7 @@ HERE = Path(__file__).parent
 VK, SHIFT, CTRL = 1, 4, 8
 SPECIAL = {"Enter": 13, "[": 219, "]": 221, ";": 186, ",": 188, ".": 190, "-": 189, "=": 187}
 
-# (клавиша, модификаторы, ID действия, группа, описание)
+# (клавиша, модификаторы, ID действия или имя .lua-скрипта рядом, группа, описание)
 KEYS = [
     # курсор правки (время) и курсор высоты
     ("h", 0, 40047, "Курсор", "курсор влево на шаг сетки"),
@@ -31,7 +31,7 @@ KEYS = [
     ("l", CTRL, 40682, "Курсор", "курсор вправо на такт"),
     ("j", CTRL, 40188, "Курсор", "курсор высоты вниз на октаву"),
     ("k", CTRL, 40187, "Курсор", "курсор высоты вверх на октаву"),
-    ("0", 0, 40042, "Курсор", "курсор в начало проекта"),
+    ("0", 0, "cursor_to_item_start.lua", "Курсор", "курсор в начало редактируемого айтема"),
     ("c", 0, 40151, "Курсор", "показать курсор в окне"),
     # вставка нот
     ("Enter", 0, 40051, "Вставка", "вставить ноту на курсоре высоты, курсор вперёд"),
@@ -97,8 +97,19 @@ def keycode(key):
     return SPECIAL.get(key) or ord(key.upper())
 
 
+def script_id(name):
+    return "RSkbd_" + Path(name).stem
+
+
 def kb_line(section, key, mods, cmd):
+    if isinstance(cmd, str):
+        cmd = "_" + script_id(cmd)
     return f"KEY {VK | mods} {keycode(key)} {cmd} {section}"
+
+
+def scr_line(section, name):
+    path = HERE / name
+    return f'SCR 4 {section} {script_id(name)} "Custom: {name}" "{path}"'
 
 
 def label(key, mods):
@@ -122,12 +133,17 @@ def install():
         sys.exit("REAPER запущен: он перезапишет reaper-kb.ini при выходе. Закройте его и повторите.")
     shutil.copy(KB_INI, KB_INI.with_name("reaper-kb.ini.bak-before-keys"))
     taken = {(sec, VK | mods, keycode(key)) for sec, key, mods, *_ in ALL}
+    scripts = {(sec, cmd) for sec, _, _, cmd, *_ in ALL if isinstance(cmd, str)}
+    paths = {f'"{HERE / name}"' for _, name in scripts}
     kept = []
     for line in KB_INI.read_text().splitlines():
         p = line.split()
+        if p[:1] == ["SCR"] and line.rstrip().endswith(tuple(paths)):
+            continue  # скрипт уже зарегистрирован (возможно под другим ID) — перерегистрируем
         if len(p) >= 5 and p[0] == "KEY" and (int(p[4]), int(p[1]), int(p[2])) in taken:
             continue  # старая привязка той же клавиши — заменяем
         kept.append(line)
+    kept += [scr_line(sec, name) for sec, name in sorted(scripts)]
     kept += [kb_line(sec, key, mods, cmd) for sec, key, mods, cmd, *_ in ALL]
     KB_INI.write_text("\n".join(kept) + "\n")
     print(f"записано {len(ALL)} привязок в {KB_INI}")
