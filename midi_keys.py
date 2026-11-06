@@ -4,8 +4,8 @@
 
 Принцип: без модификатора — курсоры, Ctrl — крупный шаг, Shift — двигать выделенные ноты.
 
-    uv run python keyboard/midi_keys.py cheatsheet   # перегенерировать KEYS.md
-    uv run python keyboard/midi_keys.py install      # записать в ~/.config/REAPER/reaper-kb.ini (REAPER закрыт!)
+    uv run midi_keys.py cheatsheet   # перегенерировать KEYS.md
+    uv run midi_keys.py install      # записать в ~/.config/REAPER/reaper-kb.ini, .lua скопировать в Scripts/ReaperKeyboard (REAPER закрыт!)
 
 Поиск ID действий: actions.tsv (кэш всех действий main и MIDI-редактора), обновляется запуском dump_actions.lua из REAPER.
 """
@@ -17,6 +17,8 @@ from pathlib import Path
 MIDI, MAIN = 32060, 0  # секции: MIDI Editor, главное окно
 KB_INI = Path.home() / ".config/REAPER/reaper-kb.ini"
 HERE = Path(__file__).parent
+# Lua scripts are copied here on install so bindings don't depend on the repo location
+SCRIPTS_DIR = Path.home() / ".config/REAPER/Scripts/ReaperKeyboard"
 
 # флаги KEY: 1 = виртуальная клавиша, 4 = Shift, 8 = Ctrl, 16 = Alt
 VK, SHIFT, CTRL = 1, 4, 8
@@ -129,7 +131,7 @@ def kb_line(section, key, mods, cmd):
 
 
 def scr_line(section, name):
-    path = HERE / name
+    path = SCRIPTS_DIR / name
     return f'SCR 4 {section} {script_id(name)} "Custom: {name}" "{path}"'
 
 
@@ -155,11 +157,16 @@ def install():
     shutil.copy(KB_INI, KB_INI.with_name("reaper-kb.ini.bak-before-keys"))
     taken = {(sec, VK | mods, keycode(key)) for sec, key, mods, *_ in ALL}
     scripts = {(sec, cmd) for sec, _, _, cmd, *_ in ALL if isinstance(cmd, str)}
-    paths = {f'"{HERE / name}"' for _, name in scripts}
+    SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+    for name in {name for _, name in scripts}:
+        shutil.copy(HERE / name, SCRIPTS_DIR / name)
+    names = {name for _, name in scripts}
+    ids = {script_id(name) for name in names}
     kept = []
     for line in KB_INI.read_text().splitlines():
         p = line.split()
-        if p[:1] == ["SCR"] and line.rstrip().endswith(tuple(paths)):
+        # Drop previous registrations of our scripts: by our ID or by file name (any old location)
+        if p[:1] == ["SCR"] and (p[3] in ids or Path(line.rstrip().strip('"')).name in names):
             continue  # скрипт уже зарегистрирован (возможно под другим ID) — перерегистрируем
         if len(p) >= 5 and p[0] == "KEY" and (int(p[4]), int(p[1]), int(p[2])) in taken:
             continue  # старая привязка той же клавиши — заменяем
